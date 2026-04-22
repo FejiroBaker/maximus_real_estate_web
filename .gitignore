@@ -2,9 +2,21 @@
 # BUILD OUTPUTS (FLUTTER)
 # ========================
 /build/
-/web/
 /web1/
 coverage/
+
+# Web build outputs only (keep source files like index.html, manifest.json, icons/)
+web/main.dart.js
+web/flutter_assets/
+web/canvaskit/
+web/flutter_bootstrap.js
+web/flutter_service_worker.js
+web/flutter.js
+web/version.json
+web/*.cache.dill.track.dill
+web/.last_build_id
+web/6*/
+web/web/
 
 # ========================
 # FLUTTER / DART
