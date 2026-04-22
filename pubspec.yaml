@@ -1,0 +1,71 @@
+name: maximus_real_estate
+description: A comprehensive real estate application with admin panel and property management
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ── Supabase (Auth + Database + Storage + Google Sign-In)
+  supabase_flutter: ^2.3.4
+  google_sign_in: ^6.2.1
+
+  # ── Environment (.env loader)
+  flutter_dotenv: ^5.1.0
+
+  # ── State Management
+  provider: ^6.1.1
+
+  # ── UI / UX
+  google_fonts: ^6.1.0
+  cached_network_image: ^3.3.1
+
+  # ── Media
+  image_picker: ^1.0.7
+  video_player: ^2.8.2
+  chewie: ^1.7.5
+
+  # ── Utilities
+  url_launcher: ^6.2.4
+  share_plus: ^7.2.2
+  intl: ^0.19.0
+  uuid: ^4.3.3
+  shared_preferences: ^2.2.2
+
+  # ── PDF / Reports
+  pdf: ^3.10.7
+  printing: ^5.11.1
+  path_provider: ^2.1.2
+
+  # ── Networking
+  http: ^1.1.0
+
+  # ── File picker
+  file_picker: ^8.0.3
+
+  # ── WebView (Paystack)
+  webview_flutter: ^4.4.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/icons/app_icon.png
+    - .env   # ✅ REQUIRED for flutter_dotenv
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/app_icon.png"
+  adaptive_icon_background: "#0A1F44"
+  adaptive_icon_foreground: "assets/icons/app_icon.png"

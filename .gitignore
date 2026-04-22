@@ -1,0 +1,75 @@
+# ========================
+# BUILD OUTPUTS (FLUTTER)
+# ========================
+/build/
+/web/
+/web1/
+coverage/
+
+# ========================
+# FLUTTER / DART
+# ========================
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+
+ios/Flutter/.last_build_id
+android/.gradle/
+android/.kotlin/
+
+# ========================
+# ENV / SECRETS
+# ========================
+.env
+*.env
+.env.*
+supabase/.env
+supabase/.temp/
+
+# ========================
+# SUPABASE
+# ========================
+.supabase/
+
+# ========================
+# FIREBASE
+# ========================
+firebase.json
+.firebaserc
+functions/
+
+# ========================
+# IDEs
+# ========================
+.idea/
+.vscode/
+*.iml
+
+# ========================
+# OS FILES
+# ========================
+.DS_Store
+Thumbs.db
+
+# ========================
+# LOGS
+# ========================
+*.log
+
+# ========================
+# ANDROID / IOS BUILD OUTPUTS
+# ========================
+android/app/debug/
+android/app/profile/
+android/app/release/
+ios/Pods/
+ios/Runner.xcworkspace/
+
+# ========================
+# SENSITIVE FILES
+# ========================
+*.pdf
