@@ -1,6 +1,6 @@
 buildscript {
     val kotlinVersion = "2.1.0"
-    
+
     repositories {
         google()
         mavenCentral()
@@ -22,20 +22,9 @@ allprojects {
 rootProject.layout.buildDirectory.set(File("../build"))
 
 subprojects {
-    project.layout.buildDirectory.set(File("${rootProject.layout.buildDirectory.get()}/${project.name}"))
-}
-
-subprojects {
-    project.evaluationDependsOn(":app")
-}
-
-// Fix for printing plugin: android:attr/lStar not found
-subprojects {
-    afterEvaluate {
-        extensions.findByType<com.android.build.gradle.LibraryExtension>()?.apply {
-            compileSdk = 34
-        }
-    }
+    project.layout.buildDirectory.set(
+        File("${rootProject.layout.buildDirectory.get()}/${project.name}")
+    )
 }
 
 tasks.register<Delete>("clean") {

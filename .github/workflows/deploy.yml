@@ -11,11 +11,20 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.38.5'   # matches your local version exactly   # ← update from 3.24.0
+          flutter-version: '3.38.5'
           channel: 'stable'
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Create .env file        # ← ADD THIS STEP
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
+          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+          echo "PAYSTACK_PUBLIC_KEY=${{ secrets.PAYSTACK_PUBLIC_KEY }}" >> .env
+          echo "PAYSTACK_CALLBACK_URL=${{ secrets.PAYSTACK_CALLBACK_URL }}" >> .env
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+          echo "ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}" >> .env
 
       - name: Build web
         run: flutter build web --release --base-href "/"
