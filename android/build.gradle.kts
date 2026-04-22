@@ -29,6 +29,15 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Fix for printing plugin: android:attr/lStar not found
+subprojects {
+    afterEvaluate {
+        extensions.findByType<com.android.build.gradle.LibraryExtension>()?.apply {
+            compileSdk = 34
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

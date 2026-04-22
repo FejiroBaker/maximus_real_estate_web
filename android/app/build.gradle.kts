@@ -7,14 +7,14 @@ plugins {
 android {
     namespace = "com.example.maximus_real_estate"
 
-    compileSdk = 36  // Back to 36 - works with updated ML Kit
+    compileSdk = 36
 
     ndkVersion = "27.3.13750724"
 
     defaultConfig {
         applicationId = "com.example.maximus_real_estate"
-        minSdk = flutter.minSdkVersion  // ML Kit requirement
-        targetSdk = 36  // Updated to match compileSdk
+        minSdk = flutter.minSdkVersion
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         multiDexEnabled = true
@@ -49,12 +49,21 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.multidex:multidex:2.0.1")  // Added for multidex support
+    implementation("androidx.multidex:multidex:2.0.1")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 }
 
 flutter {
     source = "../.."
+}
+
+// Force compileSdk on all subprojects (fixes printing plugin lStar error)
+subprojects {
+    afterEvaluate {
+        extensions.findByType<com.android.build.gradle.LibraryExtension>()?.apply {
+            compileSdk = 34
+        }
+    }
 }
 
 afterEvaluate {
