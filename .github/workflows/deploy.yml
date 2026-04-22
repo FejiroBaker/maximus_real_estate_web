@@ -17,7 +17,7 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Create .env file        # ← ADD THIS STEP
+      - name: Create .env file
         run: |
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
           echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
@@ -30,10 +30,7 @@ jobs:
         run: flutter build web --release --base-href "/"
 
       - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: ./build/web
-          vercel-args: '--prod'
+        run: |
+          npm i -g vercel@latest
+          vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
+        working-directory: ./build/web
