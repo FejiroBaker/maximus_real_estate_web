@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
-import '../../services/production_paystack_service.dart';
+import '../../services/flutterwave_service.dart';
 
 class AdminCommissionDashboard extends StatefulWidget {
   const AdminCommissionDashboard({super.key});
@@ -14,8 +14,8 @@ class AdminCommissionDashboard extends StatefulWidget {
 
 class _AdminCommissionDashboardState extends State<AdminCommissionDashboard>
     with SingleTickerProviderStateMixin {
-  final ProductionPaystackService _paystackService =
-      ProductionPaystackService();
+  final FlutterwaveService _flwService =
+      FlutterwaveService();
   final SupabaseClient _supabase = Supabase.instance.client;
 
   Map<String, dynamic> _commissionStats = {};
@@ -37,7 +37,7 @@ class _AdminCommissionDashboardState extends State<AdminCommissionDashboard>
 
   Future<void> _loadCommissionStats() async {
     setState(() => _isLoading = true);
-    final stats = await _paystackService.getTotalCommissions();
+    final stats = await _flwService.getTotalCommissions();
     if (mounted) {
       setState(() {
         _commissionStats = stats;

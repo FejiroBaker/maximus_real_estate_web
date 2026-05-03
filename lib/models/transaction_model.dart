@@ -15,7 +15,7 @@ class CommissionTransaction {
   final double commissionPercentage;
   final String status;
   final String paymentReference;
-  final String? paystackReference;
+  final String? flutterwaveReference;
   final DateTime createdAt;
   final DateTime? completedAt;
 
@@ -34,7 +34,7 @@ class CommissionTransaction {
     required this.commissionPercentage,
     required this.status,
     required this.paymentReference,
-    this.paystackReference,
+    this.flutterwaveReference,
     required this.createdAt,
     this.completedAt,
   });
@@ -53,12 +53,13 @@ class CommissionTransaction {
         'commission_percentage': commissionPercentage,
         'status': status,
         'payment_reference': paymentReference,
-        'paystack_reference': paystackReference,
+        'flutterwave_reference': flutterwaveReference,
         'created_at': createdAt.toIso8601String(),
         'completed_at': completedAt?.toIso8601String(),
       };
 
-  factory CommissionTransaction.fromJson(String id, Map<String, dynamic> json) =>
+  factory CommissionTransaction.fromJson(
+          String id, Map<String, dynamic> json) =>
       CommissionTransaction(
         id: id,
         type: json['type'] ?? '',
@@ -71,10 +72,14 @@ class CommissionTransaction {
         sellerName: json['seller_name'] ?? '',
         amount: (json['amount'] ?? 0.0).toDouble(),
         commissionAmount: (json['commission_amount'] ?? 0.0).toDouble(),
-        commissionPercentage: (json['commission_percentage'] ?? 0.0).toDouble(),
+        commissionPercentage:
+            (json['commission_percentage'] ?? 0.0).toDouble(),
         status: json['status'] ?? 'pending',
         paymentReference: json['payment_reference'] ?? '',
-        paystackReference: json['paystack_reference'],
+        // Support both old (paystack_reference) and new (flutterwave_reference)
+        // column names during migration period.
+        flutterwaveReference: json['flutterwave_reference']?.toString() ??
+            json['paystack_reference']?.toString(),
         createdAt: json['created_at'] != null
             ? DateTime.parse(json['created_at'])
             : DateTime.now(),
@@ -94,7 +99,7 @@ class ContactUnlock {
   final String sellerId;
   final double unlockFee;
   final String paymentReference;
-  final String? paystackReference;
+  final String? flutterwaveReference;
   final String status;
   final DateTime createdAt;
   final DateTime? paidAt;
@@ -109,7 +114,7 @@ class ContactUnlock {
     required this.sellerId,
     required this.unlockFee,
     required this.paymentReference,
-    this.paystackReference,
+    this.flutterwaveReference,
     required this.status,
     required this.createdAt,
     this.paidAt,
@@ -124,7 +129,7 @@ class ContactUnlock {
         'seller_id': sellerId,
         'unlock_fee': unlockFee,
         'payment_reference': paymentReference,
-        'paystack_reference': paystackReference,
+        'flutterwave_reference': flutterwaveReference,
         'status': status,
         'created_at': createdAt.toIso8601String(),
         'paid_at': paidAt?.toIso8601String(),
@@ -141,12 +146,15 @@ class ContactUnlock {
         sellerId: json['seller_id']?.toString() ?? '',
         unlockFee: (json['unlock_fee'] ?? 0.0).toDouble(),
         paymentReference: json['payment_reference'] ?? '',
-        paystackReference: json['paystack_reference'],
+        flutterwaveReference: json['flutterwave_reference']?.toString() ??
+            json['paystack_reference']?.toString(),
         status: json['status'] ?? 'pending',
         createdAt: json['created_at'] != null
             ? DateTime.parse(json['created_at'])
             : DateTime.now(),
-        paidAt: json['paid_at'] != null ? DateTime.parse(json['paid_at']) : null,
+        paidAt: json['paid_at'] != null
+            ? DateTime.parse(json['paid_at'])
+            : null,
       );
 }
 
@@ -161,7 +169,7 @@ class SellerSubscription {
   final DateTime expiryDate;
   final bool isActive;
   final String paymentReference;
-  final String? paystackReference;
+  final String? flutterwaveReference;
   final DateTime createdAt;
   final DateTime? lastPaymentDate;
 
@@ -176,7 +184,7 @@ class SellerSubscription {
     required this.expiryDate,
     required this.isActive,
     required this.paymentReference,
-    this.paystackReference,
+    this.flutterwaveReference,
     required this.createdAt,
     this.lastPaymentDate,
   });
@@ -193,12 +201,13 @@ class SellerSubscription {
         'expiry_date': expiryDate.toIso8601String(),
         'is_active': isActive,
         'payment_reference': paymentReference,
-        'paystack_reference': paystackReference,
+        'flutterwave_reference': flutterwaveReference,
         'created_at': createdAt.toIso8601String(),
         'last_payment_date': lastPaymentDate?.toIso8601String(),
       };
 
-  factory SellerSubscription.fromJson(String id, Map<String, dynamic> json) =>
+  factory SellerSubscription.fromJson(
+          String id, Map<String, dynamic> json) =>
       SellerSubscription(
         id: id,
         sellerId: json['seller_id']?.toString() ?? '',
@@ -214,7 +223,8 @@ class SellerSubscription {
             : DateTime.now(),
         isActive: json['is_active'] ?? false,
         paymentReference: json['payment_reference'] ?? '',
-        paystackReference: json['paystack_reference'],
+        flutterwaveReference: json['flutterwave_reference']?.toString() ??
+            json['paystack_reference']?.toString(),
         createdAt: json['created_at'] != null
             ? DateTime.parse(json['created_at'])
             : DateTime.now(),

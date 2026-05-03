@@ -2,9 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../services/production_paystack_service.dart';
+import '../services/flutterwave_service.dart';
 import '../models/transaction_model.dart';
-import 'paystack_webview_screen.dart';
+import 'flutterwave_webview_screen.dart';
 
 class SellerSubscriptionScreen extends StatefulWidget {
   const SellerSubscriptionScreen({Key? key}) : super(key: key);
@@ -16,8 +16,7 @@ class SellerSubscriptionScreen extends StatefulWidget {
 
 class _SellerSubscriptionScreenState
     extends State<SellerSubscriptionScreen> {
-  final ProductionPaystackService _paystackService =
-      ProductionPaystackService();
+  final FlutterwaveService _flwService = FlutterwaveService();
   SellerSubscription? _currentSubscription;
   int _propertyCount = 0;
   bool _isLoading = true;
@@ -40,8 +39,8 @@ class _SellerSubscriptionScreenState
     }
 
     final results = await Future.wait([
-      _paystackService.getSellerSubscription(user.id),
-      _paystackService.getSellerPropertyCount(user.id),
+      _flwService.getSellerSubscription(user.id),
+      _flwService.getSellerPropertyCount(user.id),
     ]);
 
     if (!mounted) return;
@@ -62,14 +61,13 @@ class _SellerSubscriptionScreenState
       return;
     }
 
-    // Show loading
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    final result = await _paystackService.paySellerSubscription(
+    final result = await _flwService.paySellerSubscription(
       seller: user,
       plan: plan,
     );
@@ -79,17 +77,16 @@ class _SellerSubscriptionScreenState
 
     if (result == null || result['status'] != true) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content:
-            Text(result?['message'] ?? 'Failed to initialize payment'),
+        content: Text(result?['message'] ?? 'Failed to initialize payment'),
         backgroundColor: Colors.red,
       ));
       return;
     }
 
-    final authorizationUrl = result['authorization_url'] as String?;
-    final reference = result['reference'] as String;
+    final paymentUrl = result['payment_url'] as String?;
+    final txRef = result['tx_ref'] as String;
 
-    if (authorizationUrl == null) {
+    if (paymentUrl == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Payment URL not received'),
           backgroundColor: Colors.red));
@@ -99,12 +96,11 @@ class _SellerSubscriptionScreenState
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PaystackWebViewScreen(
-          authorizationUrl: authorizationUrl,
-          reference: reference,
+        builder: (_) => FlutterwaveWebViewScreen(
+          paymentUrl: paymentUrl,
+          txRef: txRef,
           onSuccess: (ref) async {
-            final success =
-                await _paystackService.processSubscriptionPayment(
+            final success = await _flwService.processSubscriptionPayment(
               ref,
               user.id,
               plan,
@@ -112,8 +108,7 @@ class _SellerSubscriptionScreenState
             if (mounted) {
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content:
-                      Text('✅ Subscription activated successfully!'),
+                  content: Text('✅ Subscription activated successfully!'),
                   backgroundColor: Colors.green,
                 ));
                 _loadData();
@@ -140,8 +135,7 @@ class _SellerSubscriptionScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-          title: const Text('Seller Subscription'), elevation: 0),
+      appBar: AppBar(title: const Text('Seller Subscription'), elevation: 0),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -152,11 +146,9 @@ class _SellerSubscriptionScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Free listing status card
                     _buildFreeListingCard(),
                     const SizedBox(height: 16),
 
-                    // Current subscription
                     if (_currentSubscription != null) ...[
                       _buildCurrentSubscription(),
                       const SizedBox(height: 24),
@@ -164,8 +156,7 @@ class _SellerSubscriptionScreenState
 
                     const Text('Choose Your Plan',
                         style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold)),
+                            fontSize: 24, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     const Text(
                       'Unlock unlimited listings and premium features',
@@ -173,17 +164,16 @@ class _SellerSubscriptionScreenState
                     ),
                     const SizedBox(height: 24),
 
-                    // ✅ FIXED: using camelCase constant names
                     _buildPlanCard(
                       plan: 'basic',
                       name: 'Basic Plan',
-                      price: ProductionPaystackService.basicPlanFee,
+                      price: FlutterwaveService.basicPlanFee,
                       features: [
                         'List up to 20 properties',
                         'Standard property visibility',
                         'Email support',
                         'Basic analytics',
-                        'Paystack payment integration',
+                        'Flutterwave payment integration',
                       ],
                       color: Colors.blue,
                       isRecommended: false,
@@ -193,7 +183,7 @@ class _SellerSubscriptionScreenState
                     _buildPlanCard(
                       plan: 'premium',
                       name: 'Premium Plan',
-                      price: ProductionPaystackService.premiumPlanFee,
+                      price: FlutterwaveService.premiumPlanFee,
                       features: [
                         'Unlimited property listings',
                         'Featured property spots',
@@ -251,8 +241,7 @@ class _SellerSubscriptionScreenState
                 usedFree
                     ? 'Subscribe to list more properties.'
                     : 'Your first property listing is completely free!',
-                style: const TextStyle(
-                    color: Colors.white70, fontSize: 13),
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
             ],
           ),
@@ -279,8 +268,7 @@ class _SellerSubscriptionScreenState
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: (isActive ? Colors.green : Colors.grey)
-                .withOpacity(0.3),
+            color: (isActive ? Colors.green : Colors.grey).withOpacity(0.3),
             blurRadius: 15,
             offset: const Offset(0, 8),
           ),
@@ -293,8 +281,7 @@ class _SellerSubscriptionScreenState
             const Text('Current Subscription',
                 style: TextStyle(color: Colors.white70, fontSize: 14)),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(20)),
@@ -315,8 +302,7 @@ class _SellerSubscriptionScreenState
                   fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           Row(children: [
-            const Icon(Icons.calendar_today,
-                color: Colors.white70, size: 16),
+            const Icon(Icons.calendar_today, color: Colors.white70, size: 16),
             const SizedBox(width: 8),
             Text(
               isActive
@@ -393,16 +379,13 @@ class _SellerSubscriptionScreenState
                         fontWeight: FontWeight.bold,
                         color: color)),
                 const SizedBox(height: 12),
-                Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('₦${price.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                              fontSize: 36, fontWeight: FontWeight.bold)),
-                      const Text('/month',
-                          style: TextStyle(
-                              fontSize: 14, color: Colors.grey)),
-                    ]),
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('₦${price.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                          fontSize: 36, fontWeight: FontWeight.bold)),
+                  const Text('/month',
+                      style: TextStyle(fontSize: 14, color: Colors.grey)),
+                ]),
                 const SizedBox(height: 20),
                 ...features.map((f) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
@@ -420,10 +403,8 @@ class _SellerSubscriptionScreenState
                   child: ElevatedButton(
                     onPressed: isCurrentPlan ? null : () => _subscribe(plan),
                     style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            isCurrentPlan ? Colors.grey : color,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: isCurrentPlan ? Colors.grey : color,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12))),
                     child: Text(

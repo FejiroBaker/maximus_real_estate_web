@@ -6,7 +6,7 @@ import 'dart:io';
 import '../providers/auth_provider.dart';
 import '../providers/property_provider.dart';
 import '../models/property_model.dart';
-import '../services/production_paystack_service.dart';
+import '../services/flutterwave_service.dart';
 import 'seller_subscription_screen.dart';
 
 class AddPropertyScreen extends StatefulWidget {
@@ -19,8 +19,8 @@ class AddPropertyScreen extends StatefulWidget {
 class _AddPropertyScreenState extends State<AddPropertyScreen> {
   final _formKey = GlobalKey<FormState>();
   final ImagePicker _picker = ImagePicker();
-  final ProductionPaystackService _paystackService =
-      ProductionPaystackService();
+  final FlutterwaveService _flwService =
+      FlutterwaveService();
 
   // Basic info
   final _titleController = TextEditingController();
@@ -141,7 +141,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       });
       return;
     }
-    final result = await _paystackService.canAddProperty(user.id);
+    final result = await _flwService.canAddProperty(user.id);
     if (!mounted) return;
     setState(() {
       _checkingSubscription = false;
@@ -216,7 +216,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     }
 
     final gateResult =
-        await _paystackService.canAddProperty(authProvider.currentUser!.id);
+        await _flwService.canAddProperty(authProvider.currentUser!.id);
     if (gateResult['allowed'] != true) {
       if (mounted) _showSubscriptionRequired(gateResult['message'] ?? '');
       return;
@@ -922,7 +922,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
   Widget _buildFreeBanner() {
     return FutureBuilder<int>(
-      future: _paystackService.getSellerPropertyCount(
+      future: _flwService.getSellerPropertyCount(
         Provider.of<AuthProvider>(context, listen: false)
                 .currentUser
                 ?.id ??

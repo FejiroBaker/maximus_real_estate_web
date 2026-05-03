@@ -44,10 +44,10 @@ dependencies:
   # ── Networking
   http: ^1.1.0
 
-  # ── File picker
+  # ── File picker (PDF summariser)
   file_picker: ^8.0.3
 
-  # ── WebView (Paystack)
+  # ── WebView (Flutterwave hosted checkout)
   webview_flutter: ^4.4.2
 
 dev_dependencies:

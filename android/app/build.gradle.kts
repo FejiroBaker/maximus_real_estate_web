@@ -56,29 +56,3 @@ dependencies {
 flutter {
     source = "../.."
 }
-
-// Force compileSdk on all subprojects (fixes printing plugin lStar error)
-subprojects {
-    afterEvaluate {
-        extensions.findByType<com.android.build.gradle.LibraryExtension>()?.apply {
-            compileSdk = 34
-        }
-    }
-}
-
-afterEvaluate {
-    tasks.matching { it.name.startsWith("assemble") }.configureEach {
-        doLast {
-            val androidApkDir = file("$buildDir/outputs/flutter-apk")
-            val flutterApkDir = file("${rootProject.projectDir}/build/app/outputs/flutter-apk")
-
-            if (androidApkDir.exists()) {
-                flutterApkDir.mkdirs()
-                androidApkDir.listFiles()?.forEach { apk ->
-                    apk.copyTo(flutterApkDir.resolve(apk.name), overwrite = true)
-                }
-                androidApkDir.deleteRecursively()
-            }
-        }
-    }
-}

@@ -2,6 +2,7 @@ name: Build and Deploy to Vercel
 on:
   push:
     branches: [ master ]
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -11,20 +12,25 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.38.5'
+          flutter-version: '3.24.5'
           channel: 'stable'
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Create .env file
+        # FIX: APP_OWNER_WHATSAPP was wrongly set to ${{ secrets.SUPABASE_URL }}
+        # (copy-paste error on the last line). Corrected to its own secret.
         run: |
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
           echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
-          echo "PAYSTACK_PUBLIC_KEY=${{ secrets.PAYSTACK_PUBLIC_KEY }}" >> .env
-          echo "PAYSTACK_CALLBACK_URL=${{ secrets.PAYSTACK_CALLBACK_URL }}" >> .env
+          echo "FLUTTERWAVE_PUBLIC_KEY=${{ secrets.FLUTTERWAVE_PUBLIC_KEY }}" >> .env
+          echo "FLUTTERWAVE_CALLBACK_URL=${{ secrets.FLUTTERWAVE_CALLBACK_URL }}" >> .env
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+          echo "GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}" >> .env
           echo "ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}" >> .env
+          echo "APP_OWNER_PHONE=${{ secrets.APP_OWNER_PHONE }}" >> .env
+          echo "APP_OWNER_WHATSAPP=${{ secrets.APP_OWNER_WHATSAPP }}" >> .env
 
       - name: Build web
         run: flutter build web --release --base-href "/"

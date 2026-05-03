@@ -7,12 +7,17 @@ import 'package:intl/intl.dart';
 import '../providers/auth_provider.dart';
 import '../providers/admin_auth_provider.dart';
 import '../models/property_model.dart';
-import '../services/production_paystack_service.dart';
+import '../services/flutterwave_service.dart';
+import '../config/app_config.dart';
 import 'seller_subscription_screen.dart';
 import 'favorites_screen.dart';
 import 'property_details_screen.dart';
 import 'auth/login_screen.dart';
 import 'admin/admin_dashboard_screen.dart';
+// ── AI feature imports ──────────────────────────────────────────────────────
+import 'ai/ai_chat_screen.dart';
+import 'ai/pdf_summariser_screen.dart';
+import 'ai/lead_scoring_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -23,6 +28,7 @@ class ProfileScreen extends StatelessWidget {
     final adminProvider = Provider.of<AdminAuthProvider>(context);
     final user = authProvider.currentUser;
     final isAdmin = adminProvider.isAdmin;
+    final isSeller = user?.userType == 'seller' || user?.userType == 'agent';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Profile'), elevation: 0),
@@ -30,7 +36,7 @@ class ProfileScreen extends StatelessWidget {
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
               child: Column(children: [
-                // Profile Header
+                // ── Profile Header ─────────────────────────────────────────
                 Container(
                   width: double.infinity,
                   decoration: const BoxDecoration(
@@ -72,9 +78,10 @@ class ProfileScreen extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       isAdmin
-                          ? ProductionPaystackService.appOwnerEmail
+                          ? FlutterwaveService.appOwnerEmail
                           : (user?.email ?? ''),
-                      style: const TextStyle(fontSize: 14, color: Colors.white70),
+                      style:
+                          const TextStyle(fontSize: 14, color: Colors.white70),
                     ),
                     if (user?.phone != null && !isAdmin) ...[
                       const SizedBox(height: 4),
@@ -87,7 +94,7 @@ class ProfileScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 6),
                       decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
+                          color: Colors.white.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(20)),
                       child: Text(
                         isAdmin
@@ -102,7 +109,7 @@ class ProfileScreen extends StatelessWidget {
                   ]),
                 ),
 
-                // Menu Items
+                // ── Menu Items ─────────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(children: [
@@ -125,8 +132,7 @@ class ProfileScreen extends StatelessWidget {
                           onTap: () =>
                               _showEditProfileDialog(context, authProvider)),
 
-                      if (user?.userType == 'seller' ||
-                          user?.userType == 'agent') ...[
+                      if (isSeller) ...[
                         _menuItem(context,
                             icon: Icons.subscriptions,
                             title: 'Manage Subscription',
@@ -143,8 +149,20 @@ class ProfileScreen extends StatelessWidget {
                             onTap: () => Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                    builder: (_) => MyPropertiesScreen(
-                                        userId: user!.id)))),
+                                    builder: (_) =>
+                                        MyPropertiesScreen(userId: user!.id)))),
+                        // ── AI Lead Scoring — sellers only ─────────────────
+                        _menuItem(context,
+                            icon: Icons.psychology,
+                            title: 'AI Lead Scoring',
+                            subtitle:
+                                'Gemini AI ranks your buyer leads',
+                            badge: 'AI',
+                            onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                        const LeadScoringScreen()))),
                       ],
 
                       _menuItem(context,
@@ -166,6 +184,29 @@ class ProfileScreen extends StatelessWidget {
                               MaterialPageRoute(
                                   builder: (_) => TransactionHistoryScreen(
                                       userId: user!.id)))),
+
+                      // ── AI Chat — all users ──────────────────────────────
+                      _menuItem(context,
+                          icon: Icons.chat_bubble_outline,
+                          title: 'Maximus AI Chat',
+                          subtitle: 'Ask anything about real estate',
+                          badge: 'AI',
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const AiChatScreen()))),
+
+                      // ── PDF Analyser — all users ─────────────────────────
+                      _menuItem(context,
+                          icon: Icons.description_outlined,
+                          title: 'Document Analyser',
+                          subtitle: 'Analyse C of O, Survey Plan & more',
+                          badge: 'AI',
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      const PdfSummariserScreen()))),
 
                       _menuItem(context,
                           icon: Icons.lock_outline,
@@ -254,14 +295,16 @@ class ProfileScreen extends StatelessWidget {
             ),
             const SizedBox(width: 16),
             const Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Contact Support',
-                    style:
-                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                SizedBox(height: 2),
-                Text('We\'re here to help!',
-                    style: TextStyle(color: Colors.grey, fontSize: 13)),
-              ]),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Contact Support',
+                        style: TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold)),
+                    SizedBox(height: 2),
+                    Text('We\'re here to help!',
+                        style: TextStyle(color: Colors.grey, fontSize: 13)),
+                  ]),
             ),
           ]),
           const SizedBox(height: 24),
@@ -270,13 +313,12 @@ class ProfileScreen extends StatelessWidget {
             icon: Icons.chat,
             color: const Color(0xFF25D366),
             title: 'WhatsApp Us',
-            subtitle: ProductionPaystackService.appOwnerWhatsapp,
+            subtitle: AppConfig.appOwnerWhatsapp,
             badge: 'FASTEST',
             badgeColor: const Color(0xFF25D366),
             onTap: () {
               Navigator.pop(ctx);
-              _launchWhatsApp(
-                  ProductionPaystackService.appOwnerWhatsapp,
+              _launchWhatsApp(AppConfig.appOwnerWhatsapp,
                   'Hello! I need help with Maximus Real Estate app.\n\nMy issue: ');
             },
           ),
@@ -285,10 +327,10 @@ class ProfileScreen extends StatelessWidget {
             icon: Icons.phone,
             color: Colors.blue,
             title: 'Call Us',
-            subtitle: ProductionPaystackService.appOwnerPhone,
+            subtitle: AppConfig.appOwnerPhone,
             onTap: () {
               Navigator.pop(ctx);
-              _launchPhone(ProductionPaystackService.appOwnerPhone);
+              _launchPhone(AppConfig.appOwnerPhone);
             },
           ),
           _supportTile(
@@ -296,11 +338,11 @@ class ProfileScreen extends StatelessWidget {
             icon: Icons.email_outlined,
             color: Colors.orange,
             title: 'Email Us',
-            subtitle: ProductionPaystackService.appOwnerEmail,
+            subtitle: FlutterwaveService.appOwnerEmail,
             onTap: () {
               Navigator.pop(ctx);
               _launchEmail(
-                ProductionPaystackService.appOwnerEmail,
+                FlutterwaveService.appOwnerEmail,
                 'Support Request — Maximus Real Estate',
                 'Hello,\n\nI need help with:\n\n[Describe your issue here]\n\nThank you.',
               );
@@ -315,12 +357,14 @@ class ProfileScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.grey.shade200),
             ),
-            child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.access_time, size: 16, color: Colors.grey),
-              SizedBox(width: 8),
-              Text('Available: Mon – Sat, 8am – 8pm WAT',
-                  style: TextStyle(fontSize: 13, color: Colors.grey)),
-            ]),
+            child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.access_time, size: 16, color: Colors.grey),
+                  SizedBox(width: 8),
+                  Text('Available: Mon – Sat, 8am – 8pm WAT',
+                      style: TextStyle(fontSize: 13, color: Colors.grey)),
+                ]),
           ),
         ]),
       ),
@@ -345,7 +389,7 @@ class ProfileScreen extends StatelessWidget {
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
+              color: Colors.black.withOpacity(0.04),
               blurRadius: 8,
               offset: const Offset(0, 2))
         ],
@@ -356,7 +400,7 @@ class ProfileScreen extends StatelessWidget {
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
+              color: color.withOpacity(0.12),
               borderRadius: BorderRadius.circular(12)),
           child: Icon(icon, color: color, size: 24),
         ),
@@ -365,9 +409,10 @@ class ProfileScreen extends StatelessWidget {
           if (badge != null) ...[
             const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: (badgeColor ?? color).withValues(alpha: 0.15),
+                color: (badgeColor ?? color).withOpacity(0.15),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(badge,
@@ -383,7 +428,7 @@ class ProfileScreen extends StatelessWidget {
         trailing: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
+              color: color.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8)),
           child: Icon(Icons.arrow_forward_ios, size: 14, color: color),
         ),
@@ -408,7 +453,8 @@ class ProfileScreen extends StatelessWidget {
     if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
 
-  Future<void> _launchEmail(String to, String subject, String body) async {
+  Future<void> _launchEmail(
+      String to, String subject, String body) async {
     final uri = Uri(
       scheme: 'mailto',
       path: to,
@@ -421,8 +467,10 @@ class ProfileScreen extends StatelessWidget {
   void _showEditProfileDialog(
       BuildContext context, AuthProvider authProvider) {
     final user = authProvider.currentUser;
-    final nameController = TextEditingController(text: user?.name ?? '');
-    final phoneController = TextEditingController(text: user?.phone ?? '');
+    final nameController =
+        TextEditingController(text: user?.name ?? '');
+    final phoneController =
+        TextEditingController(text: user?.phone ?? '');
     final whatsappController =
         TextEditingController(text: user?.whatsappNumber ?? '');
     final formKey = GlobalKey<FormState>();
@@ -696,23 +744,25 @@ class ProfileScreen extends StatelessWidget {
                       TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
               SizedBox(height: 12),
               _FaqItem(
-                  q: 'How do I list a property?',
-                  a: 'Sellers/agents can tap "Add Property" (floating button). '
-                      'First listing is free; a subscription is required from the 2nd property onwards.'),
+                  q: 'How do I use the AI features?',
+                  a: 'Go to Profile → Maximus AI Chat to ask questions. '
+                      'Document Analyser lets you upload a PDF. '
+                      'AI Lead Scoring is available for sellers/agents.'),
               _FaqItem(
-                  q: 'How do I add my bank account?',
-                  a: 'When adding a property, fill in your Bank Name, Account Number, and Account Name in the "Bank Account Details" section.'),
+                  q: 'How do I list a property?',
+                  a: 'Sellers/agents tap "Add Property" (floating button). '
+                      'First listing is free; subscribe from the 2nd property onwards.'),
               _FaqItem(
                   q: 'How does contact unlocking work?',
-                  a: 'Buyers pay ₦3,000 once to see the seller\'s phone, WhatsApp and email for a specific property.'),
-              _FaqItem(
-                  q: 'How is payment split?',
-                  a: 'Inspection fees: 10% platform, 90% seller. '
-                      'Property purchase: 5% platform, 95% seller. '
-                      'Contact unlock: 100% to platform.'),
+                  a: 'Buyers pay ₦3,000 once to see seller contact details for a property.'),
               _FaqItem(
                   q: 'Payment done but app didn\'t respond?',
-                  a: 'On the payment screen, tap "I\'ve completed payment — verify now" to manually verify your transaction.'),
+                  a: 'On the payment screen, tap "I\'ve completed payment — verify now" to manually verify.'),
+              _FaqItem(
+                  q: 'How is payment split?',
+                  a: 'Inspection: 10% platform, 90% seller. '
+                      'Purchase: 5% platform, 95% seller. '
+                      'Contact unlock: 100% to platform.'),
               SizedBox(height: 12),
               Text('Still need help? Use "Contact Support" above.',
                   style: TextStyle(fontSize: 12, color: Colors.grey)),
@@ -757,7 +807,8 @@ class ProfileScreen extends StatelessWidget {
             Text('Version 1.0.0'),
             SizedBox(height: 16),
             Text(
-                'Your trusted platform for buying, selling, and renting properties across Nigeria.',
+                'Your trusted platform for buying, selling, and renting '
+                'properties across Nigeria. Powered by Gemini AI.',
                 style: TextStyle(fontSize: 14)),
             SizedBox(height: 16),
             Text('© 2026 Maximus Real Estate. All rights reserved.',
@@ -773,8 +824,11 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  void _showLogoutDialog(BuildContext context, AuthProvider authProvider,
-      AdminAuthProvider adminProvider, bool isAdmin) {
+  void _showLogoutDialog(
+      BuildContext context,
+      AuthProvider authProvider,
+      AdminAuthProvider adminProvider,
+      bool isAdmin) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -816,6 +870,7 @@ class ProfileScreen extends StatelessWidget {
     String? subtitle,
     required VoidCallback onTap,
     bool isDestructive = false,
+    String? badge,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -824,7 +879,7 @@ class ProfileScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
+              color: Colors.black.withOpacity(0.05),
               blurRadius: 10,
               offset: const Offset(0, 2))
         ],
@@ -836,17 +891,37 @@ class ProfileScreen extends StatelessWidget {
           decoration: BoxDecoration(
             color: isDestructive
                 ? Colors.red.shade50
-                : const Color(0xFF1565C0).withValues(alpha: 0.1),
+                : const Color(0xFF1565C0).withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(icon,
-              color: isDestructive ? Colors.red : const Color(0xFF1565C0),
+              color:
+                  isDestructive ? Colors.red : const Color(0xFF1565C0),
               size: 24),
         ),
-        title: Text(title,
-            style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: isDestructive ? Colors.red : Colors.black87)),
+        title: Row(children: [
+          Text(title,
+              style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color:
+                      isDestructive ? Colors.red : Colors.black87)),
+          if (badge != null) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.purple.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(badge,
+                  style: const TextStyle(
+                      color: Colors.purple,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ]),
         subtitle: subtitle != null
             ? Text(subtitle, style: const TextStyle(fontSize: 12))
             : null,
@@ -925,9 +1000,13 @@ class _MyPropertiesScreenState extends State<MyPropertiesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Properties'), elevation: 0,
+      appBar: AppBar(
+        title: const Text('My Properties'),
+        elevation: 0,
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _fetchMyProperties),
+          IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _fetchMyProperties),
         ],
       ),
       body: _isLoading
@@ -937,10 +1016,12 @@ class _MyPropertiesScreenState extends State<MyPropertiesScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.home_work_outlined, size: 64, color: Colors.grey),
+                      Icon(Icons.home_work_outlined,
+                          size: 64, color: Colors.grey),
                       SizedBox(height: 16),
                       Text("You haven't listed any properties yet",
-                          style: TextStyle(fontSize: 16, color: Colors.grey)),
+                          style:
+                              TextStyle(fontSize: 16, color: Colors.grey)),
                     ],
                   ),
                 )
@@ -994,7 +1075,8 @@ class _MyPropertiesScreenState extends State<MyPropertiesScreen> {
                                       fontWeight: FontWeight.bold)),
                               Text(
                                   '${p.location.city} • ${p.bedrooms} bed • ${p.bathrooms} bath',
-                                  style: const TextStyle(fontSize: 12)),
+                                  style:
+                                      const TextStyle(fontSize: 12)),
                             ],
                           ),
                           trailing: Container(
@@ -1102,16 +1184,19 @@ class _TransactionHistoryScreenState
       {required bool isInspection}) {
     if (items.isEmpty) {
       return Center(
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(isInspection ? Icons.event_busy : Icons.lock_open,
-              size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(
-              isInspection
-                  ? 'No inspection bookings yet'
-                  : 'No contact unlocks yet',
-              style: const TextStyle(fontSize: 16, color: Colors.grey)),
-        ]),
+        child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(isInspection ? Icons.event_busy : Icons.lock_open,
+                  size: 64, color: Colors.grey),
+              const SizedBox(height: 16),
+              Text(
+                  isInspection
+                      ? 'No inspection bookings yet'
+                      : 'No contact unlocks yet',
+                  style:
+                      const TextStyle(fontSize: 16, color: Colors.grey)),
+            ]),
       );
     }
 
@@ -1126,7 +1211,8 @@ class _TransactionHistoryScreenState
               ? data['inspection_date'] as String?
               : data['created_at'] as String?;
           final createdStr = data['created_at'] as String?;
-          final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
+          final date =
+              dateStr != null ? DateTime.tryParse(dateStr) : null;
           final created =
               createdStr != null ? DateTime.tryParse(createdStr) : null;
 
@@ -1160,19 +1246,19 @@ class _TransactionHistoryScreenState
               leading: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                    color: (isInspection ? Colors.blue : Colors.orange)
-                        .withValues(alpha: 0.1),
+                    color:
+                        (isInspection ? Colors.blue : Colors.orange)
+                            .withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10)),
                 child: Icon(
-                    isInspection ? Icons.event_available : Icons.phone,
-                    color: isInspection ? Colors.blue : Colors.orange,
+                    isInspection
+                        ? Icons.event_available
+                        : Icons.phone,
+                    color:
+                        isInspection ? Colors.blue : Colors.orange,
                     size: 24),
               ),
-              title: Text(
-                  (isInspection
-                          ? data['property_title']
-                          : data['property_title']) ??
-                      'Property',
+              title: Text(data['property_title'] ?? 'Property',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis),
@@ -1204,7 +1290,7 @@ class _TransactionHistoryScreenState
                     padding: const EdgeInsets.symmetric(
                         horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.1),
+                        color: statusColor.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(4)),
                     child: Text(status.toUpperCase(),
                         style: TextStyle(
@@ -1259,7 +1345,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
       if (mounted) {
         setState(() {
-          _notifications = List<Map<String, dynamic>>.from(data as List);
+          _notifications =
+              List<Map<String, dynamic>>.from(data as List);
           _isLoading = false;
         });
       }
@@ -1271,9 +1358,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Notifications'), elevation: 0,
+      appBar: AppBar(
+        title: const Text('Notifications'),
+        elevation: 0,
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _fetchNotifications),
+          IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _fetchNotifications),
         ],
       ),
       body: _isLoading
@@ -1297,14 +1388,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   child: ListView.separated(
                     padding: const EdgeInsets.all(16),
                     itemCount: _notifications.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    separatorBuilder: (_, __) =>
+                        const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final data = _notifications[index];
                       final bookStatus =
                           data['booking_status'] ?? 'pending';
                       final payStatus =
                           data['payment_status'] ?? 'pending';
-                      final createdStr = data['created_at'] as String?;
+                      final createdStr =
+                          data['created_at'] as String?;
                       final createdAt = createdStr != null
                           ? DateTime.tryParse(createdStr)
                           : null;
@@ -1313,7 +1406,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       Color iconColor;
                       String message;
 
-                      if (payStatus == 'paid' && bookStatus == 'confirmed') {
+                      if (payStatus == 'paid' &&
+                          bookStatus == 'confirmed') {
                         icon = Icons.check_circle;
                         iconColor = Colors.green;
                         message =
@@ -1338,14 +1432,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor:
-                              iconColor.withValues(alpha: 0.1),
-                          child: Icon(icon, color: iconColor, size: 22),
+                              iconColor.withOpacity(0.1),
+                          child:
+                              Icon(icon, color: iconColor, size: 22),
                         ),
                         title: Text(message,
                             style: const TextStyle(fontSize: 13)),
                         subtitle: createdAt != null
                             ? Text(
-                                DateFormat('MMM dd, yyyy').format(createdAt),
+                                DateFormat('MMM dd, yyyy')
+                                    .format(createdAt),
                                 style: const TextStyle(
                                     fontSize: 11, color: Colors.grey))
                             : null,

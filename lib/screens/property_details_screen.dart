@@ -1,4 +1,20 @@
 // lib/screens/property_details_screen.dart
+//
+// FIXES APPLIED (from flutter analyze output):
+// ─────────────────────────────────────────────────────────────────────────────
+// [ERROR 1+2] `authorizationUrl` undefined identifier — was a Paystack leftover.
+//             Fixed: replaced with `paymentUrl` (the Flutterwave variable).
+// [ERROR 3]   `context` named parameter isn't defined in payToUnlockContact().
+//             Fixed: removed `context:` from the call — FlutterwaveService
+//             builds the URL internally; no context is needed.
+// [ERROR 4+5] String? can't be assigned to String (paymentUrl was nullable).
+//             Fixed: null-guard paymentUrl before pushing the WebView screen.
+// [INFO]      use_build_context_synchronously — all async methods now capture
+//             a local `ScaffoldMessengerState` / `NavigatorState` before the
+//             first `await`, or use `mounted` guards correctly.
+// [INFO]      withOpacity deprecated — replaced with .withValues(alpha: …).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -11,9 +27,9 @@ import 'package:intl/intl.dart';
 import '../models/property_model.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/image_gallery_viewer.dart';
-import '../services/production_paystack_service.dart';
+import '../services/flutterwave_service.dart';
 import 'inspection_booking_screen.dart';
-import 'paystack_webview_screen.dart';
+import 'flutterwave_webview_screen.dart';
 import 'ai/neighbourhood_insights_screen.dart';
 import 'ai/ai_chat_screen.dart';
 
@@ -28,11 +44,11 @@ class PropertyDetailsScreen extends StatefulWidget {
 
 class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   int _currentImageIndex = 0;
-  final ProductionPaystackService _paystackService =
-      ProductionPaystackService();
+  final FlutterwaveService _flwService = FlutterwaveService();
   final SupabaseClient _supabase = Supabase.instance.client;
   final _currencyFmt = NumberFormat.currency(symbol: '₦', decimalDigits: 0);
 
+  // ── Video player ──────────────────────────────────────────────────────────
   void _showVideoPlayer(String videoUrl) {
     showModalBottomSheet(
       context: context,
@@ -42,7 +58,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     );
   }
 
-  // Fetch seller profile as fallback for contact details
+  // ── Fetch seller profile as fallback for contact details ──────────────────
   Future<Map<String, dynamic>?> _fetchSellerData() async {
     try {
       return await _supabase
@@ -56,12 +72,17 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     }
   }
 
+  // ── Contact Agent ─────────────────────────────────────────────────────────
+  // FIX: capture messenger/navigator state before any await so we never use
+  // a stale BuildContext across an async gap.
   void _handleContactAgent(BuildContext context) async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final user = authProvider.currentUser;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
 
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      messenger.showSnackBar(const SnackBar(
         content: Text('Please login to contact the agent'),
         backgroundColor: Colors.orange,
       ));
@@ -75,22 +96,27 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    final alreadyUnlocked = await _paystackService.hasUnlockedContact(
-        user.id, widget.property.id);
+    final alreadyUnlocked =
+        await _flwService.hasUnlockedContact(user.id, widget.property.id);
     final sellerData = await _fetchSellerData();
 
     if (!mounted) return;
-    Navigator.pop(context);
+    navigator.pop(); // close loading dialog
 
     if (alreadyUnlocked) {
+      if (!mounted) return;
       _showContactSheet(context, sellerData);
     } else {
+      if (!mounted) return;
       _showUnlockContactSheet(context, user, sellerData);
     }
   }
 
-  void _showUnlockContactSheet(BuildContext context, dynamic user,
-      Map<String, dynamic>? sellerData) {
+  void _showUnlockContactSheet(
+    BuildContext context,
+    dynamic user,
+    Map<String, dynamic>? sellerData,
+  ) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -104,7 +130,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           Text(
-            'Pay ₦3,000 once to unlock the agent\'s phone number, WhatsApp, and email for this property.',
+            'Pay ₦3,000 once to unlock the agent\'s phone number, '
+            'WhatsApp, and email for this property.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
           ),
@@ -120,7 +147,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'This is a one-time fee. You will always have access to this seller\'s contact for this property.',
+                  'One-time fee. You will always have access to this '
+                  'seller\'s contact for this property.',
                   style: TextStyle(fontSize: 12, color: Colors.blue),
                 ),
               ),
@@ -132,8 +160,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
             child: ElevatedButton.icon(
               icon: const Icon(Icons.lock_open),
               label: const Text('Pay ₦3,000 to Unlock Contact',
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 backgroundColor: const Color(0xFF1565C0),
@@ -149,8 +177,16 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     );
   }
 
+  // FIX [ERROR 1, 3, 4]:
+  //   • Removed `context:` from payToUnlockContact() — it doesn't accept one.
+  //   • Replaced undefined `authorizationUrl` with `paymentUrl`.
+  //   • Added null-guard: if paymentUrl is null, show snackbar and return.
+  //   • Captured messenger/navigator before awaits to fix async context lint.
   Future<void> _processContactUnlockPayment(
       BuildContext context, dynamic user) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     if (!context.mounted) return;
     showDialog(
       context: context,
@@ -158,54 +194,58 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    final result = await _paystackService.payToUnlockContact(
-      context: context,
+    // FIX: removed `context:` — FlutterwaveService.payToUnlockContact
+    // does not have a context parameter; it builds the URL internally.
+    final result = await _flwService.payToUnlockContact(
       property: widget.property,
       buyer: user,
     );
 
     if (!mounted) return;
-    Navigator.pop(context);
+    navigator.pop(); // close loading dialog
 
     if (result == null || result['status'] != true) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      messenger.showSnackBar(SnackBar(
         content: Text(result?['message'] ?? 'Failed to initialize payment'),
         backgroundColor: Colors.red,
       ));
       return;
     }
 
-    final authorizationUrl = result['authorization_url'] as String?;
-    final reference = result['reference'] as String;
+    // FIX [ERROR 1 & 4]: was `authorizationUrl` (Paystack leftover).
+    // Now correctly reads `payment_url` from the Flutterwave result map.
+    final String? paymentUrl = result['payment_url'] as String?;
+    final String txRef = result['tx_ref'] as String;
 
-    if (authorizationUrl == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Payment URL not received'),
-          backgroundColor: Colors.red));
+    // FIX [ERROR 4]: null-guard the URL before passing to WebView.
+    if (paymentUrl == null) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Payment URL not received. Please try again.'),
+        backgroundColor: Colors.red,
+      ));
       return;
     }
 
-    await Navigator.push(
-      context,
+    if (!mounted) return;
+    await navigator.push(
       MaterialPageRoute(
-        builder: (_) => PaystackWebViewScreen(
-          authorizationUrl: authorizationUrl,
-          reference: reference,
+        builder: (_) => FlutterwaveWebViewScreen(
+          paymentUrl: paymentUrl, // non-nullable now
+          txRef: txRef,
           onSuccess: (ref) async {
-            final success =
-                await _paystackService.processContactUnlock(ref);
+            final success = await _flwService.processContactUnlock(ref);
             if (mounted) {
               if (success) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                messenger.showSnackBar(const SnackBar(
                   content: Text('✅ Contact unlocked successfully!'),
                   backgroundColor: Colors.green,
                 ));
                 final sellerData = await _fetchSellerData();
                 if (mounted) _showContactSheet(context, sellerData);
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text(
-                      'Payment verification failed. Contact support.'),
+                messenger.showSnackBar(const SnackBar(
+                  content:
+                      Text('Payment verification failed. Contact support.'),
                   backgroundColor: Colors.red,
                 ));
               }
@@ -213,7 +253,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           },
           onCancel: () {
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              messenger.showSnackBar(
                   const SnackBar(content: Text('Payment cancelled')));
             }
           },
@@ -222,6 +262,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     );
   }
 
+  // ── Contact sheet (shown after unlock) ───────────────────────────────────
   void _showContactSheet(
       BuildContext context, Map<String, dynamic>? sellerData) {
     final propPhone = widget.property.sellerPhone.trim();
@@ -323,7 +364,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                 _sendEmail(
                   email,
                   'Enquiry: ${widget.property.title}',
-                  'Hello $name,\n\nI am interested in the property: ${widget.property.title}\n'
+                  'Hello $name,\n\nI am interested in the property: '
+                      '${widget.property.title}\n'
                       'Price: ₦${_formatPrice(widget.property.price)}\n'
                       'Location: ${widget.property.location.fullAddress}\n\n'
                       'Please contact me.\n\nThank you.',
@@ -358,26 +400,32 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       leading: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
+            // FIX: replaced deprecated withOpacity → withValues(alpha:…)
             color: color.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10)),
         child: Icon(icon, color: color, size: 22),
       ),
-      title:
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      title: Text(title,
+          style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle,
           style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-      trailing: const Icon(Icons.arrow_forward_ios,
-          size: 14, color: Colors.grey),
+      trailing:
+          const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
       onTap: onTap,
     );
   }
 
+  // ── Buy Property ──────────────────────────────────────────────────────────
+  // FIX [ERROR 2, 5]: same pattern — replaced `authorizationUrl` with
+  // `paymentUrl`, added null-guard, captured context helpers before awaits.
   void _handleBuyProperty(BuildContext context) async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final user = authProvider.currentUser;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
 
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      messenger.showSnackBar(const SnackBar(
         content: Text('Please login to purchase this property'),
         backgroundColor: Colors.orange,
       ));
@@ -385,7 +433,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     }
 
     if (user.id == widget.property.ownerId) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      messenger.showSnackBar(const SnackBar(
         content: Text('You cannot buy your own property'),
         backgroundColor: Colors.red,
       ));
@@ -395,9 +443,10 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     final double buyAmount = widget.property.buyPrice > 0
         ? widget.property.buyPrice
         : widget.property.price;
-    final double sellerPayout = buyAmount -
-        buyAmount * ProductionPaystackService.purchaseCommissionRate / 100;
+    final double sellerPayout =
+        buyAmount - buyAmount * FlutterwaveService.purchaseCommissionRate / 100;
 
+    if (!context.mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -416,7 +465,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
               _currencyFmt.format(buyAmount), Colors.blue),
           const SizedBox(height: 8),
           const Text(
-            'Payment is processed securely via Paystack.',
+            'Payment is processed securely via Flutterwave.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
             textAlign: TextAlign.center,
           ),
@@ -427,8 +476,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
               child: const Text('Cancel')),
           ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              style:
-                  ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
               child: const Text('Proceed to Payment')),
         ],
       ),
@@ -436,46 +484,50 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
 
     if (confirmed != true || !mounted) return;
 
+    if (!context.mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    final result = await _paystackService.initiatePropertyPurchase(
+    final result = await _flwService.initiatePropertyPurchase(
       property: widget.property,
       buyer: user,
     );
 
     if (!mounted) return;
-    Navigator.pop(context);
+    navigator.pop(); // close loading dialog
 
     if (result == null || result['status'] != true) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      messenger.showSnackBar(SnackBar(
         content: Text(result?['message'] ?? 'Failed to initialize payment'),
         backgroundColor: Colors.red,
       ));
       return;
     }
 
-    final authorizationUrl = result['authorization_url'] as String?;
-    final reference = result['reference'] as String;
+    // FIX [ERROR 2 & 5]: was `authorizationUrl` — now correctly `paymentUrl`.
+    final String? paymentUrl = result['payment_url'] as String?;
+    final String txRef = result['tx_ref'] as String;
 
-    if (authorizationUrl == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Payment URL not received'),
-          backgroundColor: Colors.red));
+    // FIX [ERROR 5]: null-guard before passing non-nullable String to WebView.
+    if (paymentUrl == null) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Payment URL not received. Please try again.'),
+        backgroundColor: Colors.red,
+      ));
       return;
     }
 
-    await Navigator.push(
-      context,
+    if (!mounted) return;
+    await navigator.push(
       MaterialPageRoute(
-        builder: (_) => PaystackWebViewScreen(
-          authorizationUrl: authorizationUrl,
-          reference: reference,
+        builder: (_) => FlutterwaveWebViewScreen(
+          paymentUrl: paymentUrl, // non-nullable now
+          txRef: txRef,
           onSuccess: (ref) async {
-            final success = await _paystackService.processPropertyPurchase(
+            final success = await _flwService.processPropertyPurchase(
               ref,
               widget.property,
               user,
@@ -484,7 +536,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
               if (success) {
                 _showPurchaseSuccessDialog(buyAmount, sellerPayout);
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                messenger.showSnackBar(const SnackBar(
                   content:
                       Text('Payment verification failed. Contact support.'),
                   backgroundColor: Colors.red,
@@ -494,7 +546,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           },
           onCancel: () {
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              messenger.showSnackBar(
                   const SnackBar(content: Text('Purchase cancelled')));
             }
           },
@@ -510,14 +562,18 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       builder: (ctx) => AlertDialog(
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Icon(Icons.check_circle, color: Colors.green, size: 64),
+        title:
+            const Icon(Icons.check_circle, color: Colors.green, size: 64),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           const Text('Purchase Successful!',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              style:
+                  TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center),
           const SizedBox(height: 12),
           Text(
-            'You have successfully paid ${_currencyFmt.format(amount)} for ${widget.property.title}.',
+            'You have successfully paid '
+            '${_currencyFmt.format(amount)} for '
+            '${widget.property.title}.',
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.grey),
           ),
@@ -545,17 +601,21 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   Widget _summaryRow(String label, String value, Color color) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
-        Text(value,
-            style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.bold,
-                fontSize: 14)),
-      ]),
+      child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label,
+                style: const TextStyle(color: Colors.grey, fontSize: 13)),
+            Text(value,
+                style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14)),
+          ]),
     );
   }
 
+  // ── URL launchers ─────────────────────────────────────────────────────────
   Future<void> _makePhoneCall(String phone) async {
     final uri = Uri(scheme: 'tel', path: phone);
     if (await canLaunchUrl(uri)) await launchUrl(uri);
@@ -600,6 +660,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     return price.toStringAsFixed(0);
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -608,7 +669,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     return Scaffold(
       body: Stack(children: [
         CustomScrollView(slivers: [
-          // Image Gallery
+          // ── Image Gallery ────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: SizedBox(
               height: 350,
@@ -662,6 +723,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                           height: 8,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
+                            // FIX: withOpacity → withValues(alpha:…)
                             color: _currentImageIndex == index
                                 ? Colors.white
                                 : Colors.white.withValues(alpha: 0.5),
@@ -676,12 +738,13 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                     top: 16,
                     left: 16,
                     child: GestureDetector(
-                      onTap: () => _showVideoPlayer(
-                          widget.property.videos.first),
+                      onTap: () =>
+                          _showVideoPlayer(widget.property.videos.first),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
+                          // FIX: withOpacity → withValues(alpha:…)
                           color: Colors.black.withValues(alpha: 0.7),
                           borderRadius: BorderRadius.circular(20),
                         ),
@@ -702,7 +765,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
             ),
           ),
 
-          // Property Details
+          // ── Property Details ─────────────────────────────────────────────
           SliverToBoxAdapter(
             child: Container(
               decoration: const BoxDecoration(
@@ -765,6 +828,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                     ),
                     const Divider(height: 40),
 
+                    // Transaction Info
                     if (widget.property.inspectionFee > 0 ||
                         widget.property.buyPrice > 0 ||
                         widget.property.price > 0) ...[
@@ -784,8 +848,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                             _feeRow(
                               Icons.event_available,
                               'Inspection Fee',
-                              _currencyFmt.format(
-                                  widget.property.inspectionFee),
+                              _currencyFmt
+                                  .format(widget.property.inspectionFee),
                               Colors.teal,
                             ),
                           if (widget.property.inspectionFee > 0)
@@ -841,7 +905,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
 
                     const SizedBox(height: 24),
 
-                    // AI Features section
+                    // AI Features
                     const Text('AI Tools',
                         style: TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold)),
@@ -851,11 +915,13 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                       icon: Icons.location_city,
                       color: Colors.teal,
                       title: 'Neighbourhood Insights',
-                      subtitle: 'Safety, infrastructure, amenities & price trends',
+                      subtitle:
+                          'Safety, infrastructure, amenities & price trends',
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => NeighbourhoodInsightsScreen(property: widget.property),
+                          builder: (_) => NeighbourhoodInsightsScreen(
+                              property: widget.property),
                         ),
                       ),
                     ),
@@ -865,11 +931,13 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                       icon: Icons.chat_bubble_outline,
                       color: const Color(0xFF1565C0),
                       title: 'Ask Maximus AI',
-                      subtitle: 'Get instant answers about this property',
+                      subtitle:
+                          'Get instant answers about this property',
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => AiChatScreen(property: widget.property),
+                          builder: (_) =>
+                              AiChatScreen(property: widget.property),
                         ),
                       ),
                     ),
@@ -882,7 +950,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           ),
         ]),
 
-        // Top bar
+        // ── Top bar ──────────────────────────────────────────────────────
         Positioned(
           top: MediaQuery.of(context).padding.top + 10,
           left: 16,
@@ -901,9 +969,12 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                 CircleAvatar(
                   backgroundColor: Colors.white,
                   child: IconButton(
-                    icon: const Icon(Icons.share, color: Colors.black),
+                    icon:
+                        const Icon(Icons.share, color: Colors.black),
                     onPressed: () => Share.share(
-                        '${widget.property.title} - ₦${_formatPrice(widget.property.price)}\n${widget.property.location.fullAddress}'),
+                        '${widget.property.title} - '
+                        '₦${_formatPrice(widget.property.price)}\n'
+                        '${widget.property.location.fullAddress}'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -923,7 +994,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           ),
         ),
 
-        // Bottom action buttons
+        // ── Bottom action buttons ────────────────────────────────────────
         Positioned(
           bottom: 0,
           left: 0,
@@ -934,6 +1005,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
+                    // FIX: withOpacity → withValues(alpha:…)
                     color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 10,
                     offset: const Offset(0, -5))
@@ -953,14 +1025,16 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                   icon: const Icon(Icons.event_available),
                   label: Text(
                     widget.property.inspectionFee > 0
-                        ? 'Book Inspection (${_currencyFmt.format(widget.property.inspectionFee)})'
+                        ? 'Book Inspection '
+                            '(${_currencyFmt.format(widget.property.inspectionFee)})'
                         : 'Book Free Inspection',
                     style: const TextStyle(
                         fontSize: 15, fontWeight: FontWeight.bold),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.teal,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
               ),
@@ -977,7 +1051,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
               ),
@@ -991,7 +1066,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                             const EdgeInsets.symmetric(vertical: 14)),
                     child: const Text('Contact Agent',
                         style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.bold)),
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1014,11 +1090,14 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     );
   }
 
-  Widget _feeRow(IconData icon, String label, String value, Color color) {
+  // ── Small widget helpers ──────────────────────────────────────────────────
+  Widget _feeRow(
+      IconData icon, String label, String value, Color color) {
     return Row(children: [
       Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
+          // FIX: withOpacity → withValues(alpha:…)
           color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
         ),
@@ -1031,7 +1110,9 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                   fontWeight: FontWeight.w500, fontSize: 14))),
       Text(value,
           style: TextStyle(
-              color: color, fontWeight: FontWeight.bold, fontSize: 16)),
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 16)),
     ]);
   }
 
@@ -1039,11 +1120,14 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
+          // FIX: withOpacity → withValues(alpha:…)
           color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(20)),
       child: Text(label,
           style: TextStyle(
-              color: color, fontWeight: FontWeight.w600, fontSize: 12)),
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontSize: 12)),
     );
   }
 
@@ -1057,13 +1141,13 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                 fontSize: 24, fontWeight: FontWeight.bold)),
       ]),
       const SizedBox(height: 4),
-      Text(label, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+      Text(label,
+          style: const TextStyle(color: Colors.grey, fontSize: 14)),
     ]);
   }
 }
 
-
-// ── AI Feature Tile ──────────────────────────────────────────────────────────
+// ── AI Feature Tile ───────────────────────────────────────────────────────────
 class _AiFeatureTile extends StatelessWidget {
   final IconData icon;
   final Color color;
@@ -1086,15 +1170,16 @@ class _AiFeatureTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.06),
+          // FIX: withOpacity → withValues(alpha:…)
+          color: color.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.25)),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
         ),
         child: Row(children: [
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: color, size: 22),
@@ -1113,7 +1198,7 @@ class _AiFeatureTile extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.15),
+                      color: color.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text('AI',
@@ -1211,7 +1296,8 @@ class _VideoPlayerSheetState extends State<VideoPlayerSheet> {
           child: Center(
             child: _isInitialized
                 ? Chewie(controller: _chewieController!)
-                : const CircularProgressIndicator(color: Colors.white),
+                : const CircularProgressIndicator(
+                    color: Colors.white),
           ),
         ),
       ]),

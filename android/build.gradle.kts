@@ -27,6 +27,15 @@ subprojects {
     )
 }
 
+// Force compileSdk on all subprojects (fixes printing plugin lStar error)
+subprojects {
+    afterEvaluate {
+        extensions.findByType<com.android.build.gradle.LibraryExtension>()?.apply {
+            compileSdk = 36
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

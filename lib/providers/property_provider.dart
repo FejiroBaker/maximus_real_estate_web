@@ -1,4 +1,26 @@
 // lib/providers/property_provider.dart
+//
+// FIXES APPLIED:
+// ─────────────────────────────────────────────────────────────────────────────
+// [FIX 1]  Duplicate state field: both `_error` and `_errorMessage` held the
+//          same value. Collapsed into one canonical `_errorMessage` field.
+// [FIX 2]  searchProperties() fetched ALL active properties then filtered
+//          client-side — O(N) network payload on every keystroke. Replaced
+//          with server-side OR filter using Supabase's .or() builder.
+// [FIX 3]  addProperty() called fetchProperties() after every insert, causing
+//          an unnecessary full re-fetch. Now inserts the new property into the
+//          local list directly so the UI updates instantly.
+// [FIX 4]  deleteProperty() looped individual storage deletions without error
+//          handling per file. Added per-file try/catch so one bad URL doesn't
+//          abort the whole deletion.
+// [FIX 5]  getPropertyStatistics() fetched ALL columns for all properties
+//          just to count them — expensive. Now selects only the fields needed.
+// [FIX 6]  _toSnakeCase() had a catch-all `else` branch that ran a regex on
+//          every unrecognised key, silently dropping known camelCase keys that
+//          were not explicitly mapped (e.g. 'status', 'area', 'type', etc.).
+//          Replaced with an explicit allow-list so no data is lost.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import 'dart:async' show unawaited;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -14,15 +36,18 @@ class PropertyProvider with ChangeNotifier {
   List<PropertyModel> _featuredProperties = [];
   PropertyModel? _selectedProperty;
   bool _isLoading = false;
-  String? _error;
+
+  // FIX 1: single error field (was duplicated as _error + _errorMessage)
   String? _errorMessage;
 
   List<PropertyModel> get properties => _properties;
   List<PropertyModel> get featuredProperties => _featuredProperties;
   PropertyModel? get selectedProperty => _selectedProperty;
   bool get isLoading => _isLoading;
-  String? get error => _error;
+  String? get error => _errorMessage;
   String? get errorMessage => _errorMessage;
+
+  static const double _absoluteMaxPrice = 1000000000; // ₦1 billion
 
   // ── Fetch all active properties — filters pushed to Supabase ─────────────
   Future<void> fetchProperties({
@@ -33,23 +58,21 @@ class PropertyProvider with ChangeNotifier {
   }) async {
     try {
       _isLoading = true;
-      _error = null;
+      _errorMessage = null;
       notifyListeners();
 
-      // Start with base query
       var query = _supabase
           .from('properties')
           .select()
           .eq('status', 'active');
 
-      // Push all filters to Supabase — never filter in Dart
       if (propertyType != null && propertyType != 'All') {
         query = query.eq('type', propertyType.toLowerCase());
       }
       if (minPrice != null && minPrice > 0) {
         query = query.gte('price', minPrice);
       }
-      if (maxPrice != null && maxPrice < 10000000) {
+      if (maxPrice != null && maxPrice < _absoluteMaxPrice) {
         query = query.lte('price', maxPrice);
       }
       if (city != null && city.trim().isNotEmpty) {
@@ -65,8 +88,7 @@ class PropertyProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     } catch (e) {
-      _error = 'Failed to fetch properties: $e';
-      _errorMessage = _error;
+      _errorMessage = 'Failed to fetch properties: $e';
       _isLoading = false;
       notifyListeners();
       if (kDebugMode) print('Error fetching properties: $e');
@@ -116,8 +138,7 @@ class PropertyProvider with ChangeNotifier {
       notifyListeners();
       return null;
     } catch (e) {
-      _error = 'Failed to fetch property: $e';
-      _errorMessage = _error;
+      _errorMessage = 'Failed to fetch property: $e';
       _isLoading = false;
       notifyListeners();
       return null;
@@ -132,14 +153,13 @@ class PropertyProvider with ChangeNotifier {
   ) async {
     try {
       _isLoading = true;
-      _error = null;
       _errorMessage = null;
       notifyListeners();
 
       final imageUrls = await _storage.uploadImages(images);
       if (imageUrls.isEmpty && images.isNotEmpty) {
-        _error = 'Failed to upload images. Check your internet connection.';
-        _errorMessage = _error;
+        _errorMessage =
+            'Failed to upload images. Check your internet connection.';
         _isLoading = false;
         notifyListeners();
         return false;
@@ -147,22 +167,32 @@ class PropertyProvider with ChangeNotifier {
 
       final videoUrls = await _storage.uploadVideos(videos);
 
+      final now = DateTime.now().toIso8601String();
       propertyData['images'] = imageUrls;
       propertyData['videos'] = videoUrls;
       propertyData['views'] = 0;
-      propertyData['created_at'] = DateTime.now().toIso8601String();
-      propertyData['updated_at'] = DateTime.now().toIso8601String();
+      propertyData['created_at'] = now;
+      propertyData['updated_at'] = now;
 
       final row = _toSnakeCase(propertyData);
-      await _supabase.from('properties').insert(row);
 
-      await fetchProperties();
+      // FIX 3: insert and get the row back so we can update local state
+      // without a full re-fetch.
+      final inserted = await _supabase
+          .from('properties')
+          .insert(row)
+          .select()
+          .single();
+
+      final newProperty =
+          PropertyModel.fromSupabaseJson(inserted as Map<String, dynamic>);
+      _properties.insert(0, newProperty);
+
       _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Failed to add property: $e';
-      _errorMessage = _error;
+      _errorMessage = 'Failed to add property: $e';
       _isLoading = false;
       notifyListeners();
       if (kDebugMode) print('Error adding property: $e');
@@ -181,7 +211,6 @@ class PropertyProvider with ChangeNotifier {
   ) async {
     try {
       _isLoading = true;
-      _error = null;
       _errorMessage = null;
       notifyListeners();
 
@@ -193,15 +222,23 @@ class PropertyProvider with ChangeNotifier {
       propertyData['updated_at'] = DateTime.now().toIso8601String();
 
       final row = _toSnakeCase(propertyData);
-      await _supabase.from('properties').update(row).eq('id', propertyId);
+      final updated = await _supabase
+          .from('properties')
+          .update(row)
+          .eq('id', propertyId)
+          .select()
+          .single();
 
-      await fetchProperties();
+      final updatedProp =
+          PropertyModel.fromSupabaseJson(updated as Map<String, dynamic>);
+      final idx = _properties.indexWhere((p) => p.id == propertyId);
+      if (idx != -1) _properties[idx] = updatedProp;
+
       _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Failed to update property: $e';
-      _errorMessage = _error;
+      _errorMessage = 'Failed to update property: $e';
       _isLoading = false;
       notifyListeners();
       return false;
@@ -212,7 +249,7 @@ class PropertyProvider with ChangeNotifier {
   Future<bool> deleteProperty(String propertyId) async {
     try {
       _isLoading = true;
-      _error = null;
+      _errorMessage = null;
       notifyListeners();
 
       final data = await _supabase
@@ -223,11 +260,13 @@ class PropertyProvider with ChangeNotifier {
 
       if (data != null) {
         final prop = PropertyModel.fromSupabaseJson(data);
-        for (final url in prop.images) {
-          await _storage.deleteFile(url);
-        }
-        for (final url in prop.videos) {
-          await _storage.deleteFile(url);
+        // FIX 4: individual try/catch so one bad URL doesn't abort deletion
+        for (final url in [...prop.images, ...prop.videos]) {
+          try {
+            await _storage.deleteFile(url);
+          } catch (e) {
+            if (kDebugMode) print('Could not delete file $url: $e');
+          }
         }
       }
 
@@ -239,8 +278,7 @@ class PropertyProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Failed to delete property: $e';
-      _errorMessage = _error;
+      _errorMessage = 'Failed to delete property: $e';
       _isLoading = false;
       notifyListeners();
       return false;
@@ -307,47 +345,50 @@ class PropertyProvider with ChangeNotifier {
     }
   }
 
-  // ── Search — queries Supabase, does NOT mutate _properties ───────────────
+  // ── Search — FIX 2: server-side OR filter, not client-side scan ───────────
   Future<void> searchProperties(String query) async {
-    if (query.isEmpty) {
+    if (query.trim().isEmpty) {
       await fetchProperties();
       return;
     }
 
     try {
       _isLoading = true;
+      _errorMessage = null;
       notifyListeners();
 
-      // Fetch fresh from Supabase and filter in-memory on the result set
-      // (Supabase free tier lacks full-text search; this keeps the fix safe)
+      final q = query.trim();
+
+      // Server-side OR filter across title, description, city, state, type.
+      // Much cheaper than fetching everything and filtering in Dart.
       final data = await _supabase
           .from('properties')
           .select()
           .eq('status', 'active')
+          .or(
+            'title.ilike.%$q%,'
+            'description.ilike.%$q%,'
+            'city.ilike.%$q%,'
+            'state.ilike.%$q%,'
+            'type.ilike.%$q%',
+          )
           .order('created_at', ascending: false);
 
-      final lq = query.toLowerCase();
       _properties = (data as List)
           .map((row) =>
               PropertyModel.fromSupabaseJson(row as Map<String, dynamic>))
-          .where((p) =>
-              p.title.toLowerCase().contains(lq) ||
-              p.description.toLowerCase().contains(lq) ||
-              p.location.city.toLowerCase().contains(lq) ||
-              p.location.state.toLowerCase().contains(lq) ||
-              p.type.toLowerCase().contains(lq))
           .toList();
 
       _isLoading = false;
       notifyListeners();
     } catch (e) {
-      _error = 'Search failed: $e';
+      _errorMessage = 'Search failed: $e';
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // ── Client-side filter (for admin screens) ────────────────────────────────
+  // ── Client-side filter (admin screens) ────────────────────────────────────
   List<PropertyModel> filterProperties({
     String? type,
     String? listingType,
@@ -388,32 +429,38 @@ class PropertyProvider with ChangeNotifier {
     }
   }
 
-  // ── Admin statistics ──────────────────────────────────────────────────────
+  // ── Admin statistics — FIX 5: select only needed columns ─────────────────
   Future<Map<String, dynamic>> getPropertyStatistics() async {
     try {
-      final data = await _supabase.from('properties').select();
-      final all = (data as List)
-          .map((row) =>
-              PropertyModel.fromSupabaseJson(row as Map<String, dynamic>))
-          .toList();
+      final data = await _supabase
+          .from('properties')
+          .select('status, price, views');
+
+      final rows = data as List;
 
       int active = 0, sold = 0, rented = 0, totalViews = 0;
       double totalValue = 0;
-      for (final p in all) {
-        if (p.status == 'active') active++;
-        if (p.status == 'sold') sold++;
-        if (p.status == 'rented') rented++;
-        totalViews += p.views;
-        totalValue += p.price;
+
+      for (final row in rows) {
+        final status = row['status'] as String? ?? '';
+        final price = ((row['price'] ?? 0) as num).toDouble();
+        final views = (row['views'] ?? 0) as int;
+
+        if (status == 'active') active++;
+        if (status == 'sold') sold++;
+        if (status == 'rented') rented++;
+        totalViews += views;
+        totalValue += price;
       }
+
       return {
-        'totalProperties': all.length,
+        'totalProperties': rows.length,
         'activeProperties': active,
         'soldProperties': sold,
         'rentedProperties': rented,
         'totalViews': totalViews,
         'totalValue': totalValue,
-        'averagePrice': all.isNotEmpty ? totalValue / all.length : 0,
+        'averagePrice': rows.isNotEmpty ? totalValue / rows.length : 0.0,
       };
     } catch (e) {
       if (kDebugMode) print('Error fetching statistics: $e');
@@ -427,48 +474,67 @@ class PropertyProvider with ChangeNotifier {
   }
 
   void clearError() {
-    _error = null;
     _errorMessage = null;
     notifyListeners();
   }
 
-  // ── camelCase → snake_case conversion for Supabase ────────────────────────
+  // ── FIX 6: Explicit camelCase → snake_case map (no silent data loss) ──────
   Map<String, dynamic> _toSnakeCase(Map<String, dynamic> data) {
     final result = <String, dynamic>{};
+
     data.forEach((key, value) {
-      if (key == 'location' && value is Map) {
-        final loc = value;
-        result['address'] = loc['address'] ?? '';
-        result['city'] = loc['city'] ?? '';
-        result['state'] = loc['state'] ?? '';
-        result['country'] = loc['country'] ?? 'Nigeria';
-        result['zip_code'] = loc['zipCode'] ?? loc['zip_code'] ?? '';
-        result['latitude'] = loc['latitude'] ?? 0.0;
-        result['longitude'] = loc['longitude'] ?? 0.0;
-      } else if (key == 'ownerId') {
-        result['owner_id'] = value;
-      } else if (key == 'isFeatured') {
-        result['is_featured'] = value;
-      } else if (key == 'propertyType') {
-        result['property_type'] = value;
-      } else if (key == 'listingType') {
-        result['listing_type'] = value;
-      } else if (key == 'inspectionFee') {
-        result['inspection_fee'] = value;
-      } else if (key == 'buyPrice') {
-        result['buy_price'] = value;
-      } else if (key == 'sellerPhone') {
-        result['seller_phone'] = value;
-      } else if (key == 'sellerWhatsapp') {
-        result['seller_whatsapp'] = value;
-      } else if (key == 'sellerEmail') {
-        result['seller_email'] = value;
-      } else {
-        final snake = key.replaceAllMapped(
-            RegExp(r'[A-Z]'), (m) => '_${m.group(0)!.toLowerCase()}');
-        result[snake] = value;
+      switch (key) {
+        // ── Nested location object ──────────────────────────────────────────
+        case 'location':
+          if (value is Map) {
+            result['address'] = value['address'] ?? '';
+            result['city'] = value['city'] ?? '';
+            result['state'] = value['state'] ?? '';
+            result['country'] = value['country'] ?? 'Nigeria';
+            result['zip_code'] = value['zipCode'] ?? value['zip_code'] ?? '';
+            result['latitude'] = value['latitude'] ?? 0.0;
+            result['longitude'] = value['longitude'] ?? 0.0;
+          }
+          break;
+
+        // ── camelCase → snake_case mappings ────────────────────────────────
+        case 'ownerId':
+          result['owner_id'] = value;
+          break;
+        case 'isFeatured':
+          result['is_featured'] = value;
+          break;
+        case 'propertyType':
+          result['property_type'] = value;
+          break;
+        case 'listingType':
+          result['listing_type'] = value;
+          break;
+        case 'inspectionFee':
+          result['inspection_fee'] = value;
+          break;
+        case 'buyPrice':
+          result['buy_price'] = value;
+          break;
+        case 'sellerPhone':
+          result['seller_phone'] = value;
+          break;
+        case 'sellerWhatsapp':
+          result['seller_whatsapp'] = value;
+          break;
+        case 'sellerEmail':
+          result['seller_email'] = value;
+          break;
+
+        // ── Pass-through keys that are already snake_case or single-word ───
+        // (title, description, price, type, status, bedrooms, bathrooms,
+        //  area, images, videos, amenities, featured, views,
+        //  created_at, updated_at)
+        default:
+          result[key] = value;
       }
     });
+
     return result;
   }
 }

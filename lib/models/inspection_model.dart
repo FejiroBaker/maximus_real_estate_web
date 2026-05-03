@@ -11,10 +11,10 @@ class InspectionBooking {
   final DateTime inspectionDate;
   final String timeSlot;
   final double inspectionFee;
-  final String paymentStatus; // 'pending', 'paid', 'failed'
+  final String paymentStatus; // 'pending', 'paid', 'failed', 'free'
   final String bookingStatus; // 'pending', 'confirmed', 'cancelled', 'completed'
   final String paymentReference;
-  final String? paystackReference;
+  final String? flutterwaveReference;
   final DateTime createdAt;
   final DateTime? paidAt;
 
@@ -32,7 +32,7 @@ class InspectionBooking {
     required this.paymentStatus,
     required this.bookingStatus,
     required this.paymentReference,
-    this.paystackReference,
+    this.flutterwaveReference,
     required this.createdAt,
     this.paidAt,
   });
@@ -50,12 +50,13 @@ class InspectionBooking {
         'payment_status': paymentStatus,
         'booking_status': bookingStatus,
         'payment_reference': paymentReference,
-        'paystack_reference': paystackReference,
+        'flutterwave_reference': flutterwaveReference,
         'created_at': createdAt.toIso8601String(),
         'paid_at': paidAt?.toIso8601String(),
       };
 
-  factory InspectionBooking.fromJson(String id, Map<String, dynamic> json) =>
+  factory InspectionBooking.fromJson(
+          String id, Map<String, dynamic> json) =>
       InspectionBooking(
         id: id,
         propertyId: json['property_id']?.toString() ?? '',
@@ -72,11 +73,14 @@ class InspectionBooking {
         paymentStatus: json['payment_status'] ?? 'pending',
         bookingStatus: json['booking_status'] ?? 'pending',
         paymentReference: json['payment_reference'] ?? '',
-        paystackReference: json['paystack_reference'],
+        // Support both old and new column names during DB migration
+        flutterwaveReference: json['flutterwave_reference']?.toString() ??
+            json['paystack_reference']?.toString(),
         createdAt: json['created_at'] != null
             ? DateTime.parse(json['created_at'])
             : DateTime.now(),
-        paidAt:
-            json['paid_at'] != null ? DateTime.parse(json['paid_at']) : null,
+        paidAt: json['paid_at'] != null
+            ? DateTime.parse(json['paid_at'])
+            : null,
       );
 }

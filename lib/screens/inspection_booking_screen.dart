@@ -5,8 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import '../models/property_model.dart';
 import '../providers/auth_provider.dart';
-import '../services/production_paystack_service.dart';
-import 'paystack_webview_screen.dart';
+import '../services/flutterwave_service.dart';
+import 'flutterwave_webview_screen.dart';
 
 class InspectionBookingScreen extends StatefulWidget {
   final PropertyModel property;
@@ -19,7 +19,7 @@ class InspectionBookingScreen extends StatefulWidget {
 
 class _InspectionBookingScreenState extends State<InspectionBookingScreen> {
   final _formKey = GlobalKey<FormState>();
-  final ProductionPaystackService _paystackService = ProductionPaystackService();
+  final FlutterwaveService _flwService = FlutterwaveService();
   final SupabaseClient _supabase = Supabase.instance.client;
 
   DateTime? _selectedDate;
@@ -80,7 +80,7 @@ class _InspectionBookingScreenState extends State<InspectionBookingScreen> {
     setState(() => _isProcessing = true);
 
     try {
-      final reference = _paystackService.generateReference();
+      final txRef = _flwService.generateReference();
       final now = DateTime.now().toIso8601String();
 
       // Insert booking record (pending)
@@ -98,7 +98,7 @@ class _InspectionBookingScreenState extends State<InspectionBookingScreen> {
             'inspection_fee': _inspectionFee,
             'payment_status': _isFree ? 'free' : 'pending',
             'booking_status': _isFree ? 'confirmed' : 'pending',
-            'payment_reference': reference,
+            'payment_reference': txRef,
             'created_at': now,
             'updated_at': now,
           })
@@ -113,26 +113,24 @@ class _InspectionBookingScreenState extends State<InspectionBookingScreen> {
         return;
       }
 
-      // Paid inspection — launch Paystack
-      final paymentResult = await _paystackService.chargeCardForInspection(
-        email: user.email,
-        amount: _inspectionFee,
-        reference: reference,
+      // Paid inspection — launch Flutterwave
+      final paymentResult = await _flwService.chargeForInspection(
         property: widget.property,
         buyer: user,
+        txRef: txRef,
       );
 
       if (paymentResult != null && paymentResult['status'] == true) {
-        final authorizationUrl = paymentResult['authorization_url'] as String?;
-        if (authorizationUrl != null && mounted) {
+        final paymentUrl = paymentResult['payment_url'] as String?;
+        if (paymentUrl != null && mounted) {
           await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => PaystackWebViewScreen(
-                authorizationUrl: authorizationUrl,
-                reference: reference,
+              builder: (_) => FlutterwaveWebViewScreen(
+                paymentUrl: paymentUrl,
+                txRef: txRef,
                 onSuccess: (ref) async {
-                  final success = await _paystackService.processInspectionPayment(
+                  final success = await _flwService.processInspectionPayment(
                     ref,
                     widget.property,
                     user,
@@ -142,7 +140,7 @@ class _InspectionBookingScreenState extends State<InspectionBookingScreen> {
                     await _supabase.from('inspections').update({
                       'payment_status': 'paid',
                       'booking_status': 'confirmed',
-                      'paystack_reference': ref,
+                      'flutterwave_reference': ref,
                       'paid_at': DateTime.now().toIso8601String(),
                       'updated_at': DateTime.now().toIso8601String(),
                     }).eq('id', bookingId);
@@ -455,7 +453,7 @@ class _InspectionBookingScreenState extends State<InspectionBookingScreen> {
                       '• Detailed inspection report\n'
                       '• 1-hour inspection duration\n'
                       '• Agent will meet you at the property\n'
-                      '• Payment is secure via Paystack',
+                      '• Payment is secure via Flutterwave',
                       style: TextStyle(fontSize: 13, height: 1.5),
                     ),
                   ],

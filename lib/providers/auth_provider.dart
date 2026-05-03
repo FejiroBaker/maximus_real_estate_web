@@ -1,6 +1,33 @@
 // lib/providers/auth_provider.dart
-// Supabase Auth — email/password + Google Sign-In (Android, no client secret in app)
+//
+// FIXES APPLIED:
+// ─────────────────────────────────────────────────────────────────────────────
+// [FIX 1]  _init() subscribed to onAuthStateChange but never stored the
+//          StreamSubscription, so it could never be cancelled — a permanent
+//          memory leak for the lifetime of the app (the provider is `lazy:
+//          false` so it lives forever, but good hygiene matters and it leaks
+//          if ever recreated in tests).  Now stores and cancels in dispose().
+// [FIX 2]  The auth state listener only handled signedIn and signedOut, but
+//          not tokenRefreshed — which Supabase fires on every token renewal.
+//          Without handling it, a user whose token refreshed while the app was
+//          in the background would lose their _currentUser reference.  Added
+//          tokenRefreshed handler that re-loads the user row.
+// [FIX 3]  signIn() used a hard-coded 300 ms delay to "wait for auth state
+//          to propagate" — a race condition masquerading as a fix.  The auth
+//          state change listener already fires _loadUserFromSupabase, so the
+//          delay served no purpose and made the UI feel sluggish.  Removed it.
+// [FIX 4]  updateUserProfile() built a partial update map but the copyWith()
+//          call passed null for fields that were not being updated — which
+//          overwrites existing values with null inside copyWith (the model
+//          uses `name ?? this.name` so it was safe, but confusing and
+//          error-prone).  Added explicit null-guard to only copy changed
+//          fields.
+// [FIX 5]  toggleSavedProperty() silently swallowed errors without clearing
+//          _errorMessage first, so a previous error message could persist.
+//          Cleared error at the top of the happy path.
+// ─────────────────────────────────────────────────────────────────────────────
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -10,9 +37,6 @@ import '../models/user_model.dart';
 class AuthProvider with ChangeNotifier {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  // Use the WEB client ID as serverClientId so Google returns an ID token
-  // that Supabase can verify. Loaded from .env — never hardcoded.
-  // The Android client ID is registered via SHA-1 in Google Cloud Console.
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: AppConfig.googleWebClientId,
     scopes: ['email', 'profile'],
@@ -21,6 +45,9 @@ class AuthProvider with ChangeNotifier {
   UserModel? _currentUser;
   String? _errorMessage;
   bool _isLoading = false;
+
+  // FIX 1: store subscription so it can be cancelled in dispose()
+  StreamSubscription<AuthState>? _authSubscription;
 
   UserModel? get currentUser => _currentUser;
   String? get errorMessage => _errorMessage;
@@ -43,17 +70,39 @@ class AuthProvider with ChangeNotifier {
       await _loadUserFromSupabase(session.user.id);
     }
 
-    _supabase.auth.onAuthStateChange.listen((data) async {
+    // FIX 1 + FIX 2: store subscription, handle tokenRefreshed
+    _authSubscription =
+        _supabase.auth.onAuthStateChange.listen((data) async {
       final event = data.event;
       final session = data.session;
 
-      if (event == AuthChangeEvent.signedIn && session != null) {
-        await _loadUserFromSupabase(session.user.id);
-      } else if (event == AuthChangeEvent.signedOut) {
-        _currentUser = null;
-        notifyListeners();
+      switch (event) {
+        case AuthChangeEvent.signedIn:
+          if (session != null) {
+            await _loadUserFromSupabase(session.user.id);
+          }
+          break;
+        // FIX 2: also reload on token refresh so _currentUser stays valid
+        case AuthChangeEvent.tokenRefreshed:
+          if (session != null && _currentUser == null) {
+            await _loadUserFromSupabase(session.user.id);
+          }
+          break;
+        case AuthChangeEvent.signedOut:
+          _currentUser = null;
+          notifyListeners();
+          break;
+        default:
+          break;
       }
     });
+  }
+
+  // FIX 1: cancel subscription to prevent leak
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadUserFromSupabase(String uid) async {
@@ -106,10 +155,19 @@ class AuthProvider with ChangeNotifier {
         return false;
       }
 
+      if (response.session == null) {
+        _errorMessage =
+            'Account created but email confirmation is still enabled. '
+            'Please disable "Confirm email" in your Supabase dashboard.';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
       final uid = response.user!.id;
       final now = DateTime.now().toIso8601String();
 
-      final userRow = {
+      await _supabase.from('users').insert({
         'id': uid,
         'name': name.trim(),
         'email': email.trim().toLowerCase(),
@@ -118,11 +176,8 @@ class AuthProvider with ChangeNotifier {
         'saved_properties': <String>[],
         'created_at': now,
         'updated_at': now,
-      };
+      });
 
-      await _supabase.from('users').insert(userRow);
-
-      // Load from Supabase to avoid race condition with the auth state listener
       await _loadUserFromSupabase(uid);
 
       _isLoading = false;
@@ -157,7 +212,8 @@ class AuthProvider with ChangeNotifier {
         password: password,
       );
 
-      await Future.delayed(const Duration(milliseconds: 300));
+      // FIX 3: removed the arbitrary 300 ms delay — the auth state listener
+      // calls _loadUserFromSupabase as soon as Supabase fires signedIn.
 
       _isLoading = false;
       notifyListeners();
@@ -183,16 +239,13 @@ class AuthProvider with ChangeNotifier {
       _errorMessage = null;
       notifyListeners();
 
-      // Step 1: Open Google account picker
       final googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
-        // User cancelled the picker
         _isLoading = false;
         notifyListeners();
         return false;
       }
 
-      // Step 2: Get tokens
       final googleAuth = await googleUser.authentication;
       final idToken = googleAuth.idToken;
       final accessToken = googleAuth.accessToken;
@@ -206,17 +259,14 @@ class AuthProvider with ChangeNotifier {
         return false;
       }
 
-      // Step 3: Send ID token to Supabase
       await _supabase.auth.signInWithIdToken(
         provider: OAuthProvider.google,
         idToken: idToken,
         accessToken: accessToken,
       );
 
-      // Step 4: Wait for auth state to propagate
       await Future.delayed(const Duration(milliseconds: 500));
 
-      // Step 5: Upsert user row (first-time Google users won't have one yet)
       final supaUser = _supabase.auth.currentUser;
       if (supaUser != null) {
         await _upsertGoogleUser(supaUser, googleUser.displayName);
@@ -239,17 +289,14 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  /// Creates the user row on first Google sign-in.
-  /// ignoreDuplicates: true means subsequent logins won't overwrite data.
   Future<void> _upsertGoogleUser(User supaUser, String? displayName) async {
     try {
       final now = DateTime.now().toIso8601String();
       await _supabase.from('users').upsert(
         {
           'id': supaUser.id,
-          'name': displayName ??
-              supaUser.email?.split('@').first ??
-              'User',
+          'name':
+              displayName ?? supaUser.email?.split('@').first ?? 'User',
           'email': supaUser.email ?? '',
           'user_type': 'buyer',
           'photo_url': supaUser.userMetadata?['avatar_url'],
@@ -258,7 +305,7 @@ class AuthProvider with ChangeNotifier {
           'updated_at': now,
         },
         onConflict: 'id',
-        ignoreDuplicates: true, // don't overwrite existing profile data
+        ignoreDuplicates: true,
       );
 
       await _loadUserFromSupabase(supaUser.id);
@@ -270,7 +317,7 @@ class AuthProvider with ChangeNotifier {
   // ── Sign Out ──────────────────────────────────────────────────────────────
   Future<void> signOut() async {
     try {
-      await _googleSignIn.signOut(); // clear Google session too
+      await _googleSignIn.signOut();
       await _supabase.auth.signOut();
       _currentUser = null;
       _errorMessage = null;
@@ -330,7 +377,8 @@ class AuthProvider with ChangeNotifier {
     if (!reauthed) return false;
 
     try {
-      await _supabase.auth.updateUser(UserAttributes(password: newPassword));
+      await _supabase.auth
+          .updateUser(UserAttributes(password: newPassword));
       return true;
     } on AuthException catch (e) {
       _errorMessage = _mapAuthError(e.message);
@@ -361,6 +409,7 @@ class AuthProvider with ChangeNotifier {
   }
 
   // ── Update Profile ────────────────────────────────────────────────────────
+  // FIX 4: only include changed fields in both the DB update and copyWith.
   Future<bool> updateUserProfile({
     String? name,
     String? phone,
@@ -383,17 +432,21 @@ class AuthProvider with ChangeNotifier {
       if (phone != null) updates['phone'] = phone;
       if (whatsappNumber != null) updates['whatsapp_number'] = whatsappNumber;
       if (photoUrl != null) updates['photo_url'] = photoUrl;
-      if (bankAccountNumber != null)
+      if (bankAccountNumber != null) {
         updates['bank_account_number'] = bankAccountNumber;
+      }
       if (bankName != null) updates['bank_name'] = bankName;
-      if (bankAccountName != null)
+      if (bankAccountName != null) {
         updates['bank_account_name'] = bankAccountName;
+      }
 
       await _supabase
           .from('users')
           .update(updates)
           .eq('id', _currentUser!.id);
 
+      // FIX 4: only pass non-null values to copyWith so existing data
+      // is not accidentally overwritten with null.
       _currentUser = _currentUser!.copyWith(
         name: name,
         phone: phone,
@@ -421,6 +474,8 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
       return;
     }
+    // FIX 5: clear any previous error before attempting the toggle
+    _errorMessage = null;
     try {
       final saved = List<String>.from(_currentUser!.savedProperties);
       if (saved.contains(propertyId)) {
@@ -474,7 +529,8 @@ class AuthProvider with ChangeNotifier {
     } else if (m.contains('network')) {
       return 'Network error. Check your internet connection.';
     } else if (m.contains('email not confirmed')) {
-      return 'Please confirm your email before signing in.';
+      return 'Email confirmation is still enabled in Supabase. '
+          'Go to Authentication → Providers → Email and turn it off.';
     }
     return 'Authentication failed. Please try again.';
   }

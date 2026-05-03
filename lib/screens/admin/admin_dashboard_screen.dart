@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/property_provider.dart';
 import '../../providers/admin_auth_provider.dart';
-import '../../services/production_paystack_service.dart';
+import '../../services/flutterwave_service.dart';
 import 'admin_add_property_screen.dart';
 import 'admin_manage_property_screen.dart';
 import 'admin_commission_dashboard.dart';
@@ -20,7 +20,7 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
-  final ProductionPaystackService _paystackService = ProductionPaystackService();
+  final FlutterwaveService _flwService = FlutterwaveService();
   Map<String, dynamic> _statistics = {};
   Map<String, dynamic> _commissionStats = {};
   bool _isLoadingStats = true;
@@ -45,7 +45,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _loadCommissions() async {
     setState(() => _isLoadingCommissions = true);
-    final stats = await _paystackService.getTotalCommissions();
+    final stats = await _flwService.getTotalCommissions();
     if (mounted) setState(() { _commissionStats = stats; _isLoadingCommissions = false; });
   }
 

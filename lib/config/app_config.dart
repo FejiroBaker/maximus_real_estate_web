@@ -18,42 +18,25 @@ class AppConfig {
       dotenv.env['GEMINI_API_KEY'] ?? _missing('GEMINI_API_KEY');
 
   // ── Google Sign-In ──────────────────────────────────────────────────────────
-  // Use the WEB client ID from Google Cloud Console as the serverClientId.
-  // The Android client ID is registered via SHA-1 — NOT stored here.
   static String get googleWebClientId =>
       dotenv.env['GOOGLE_WEB_CLIENT_ID'] ?? _missing('GOOGLE_WEB_CLIENT_ID');
 
-  // ── Cloudinary (kept for legacy compatibility) ──────────────────────────────
-  static String get cloudinaryCloudName =>
-      dotenv.env['CLOUDINARY_CLOUD_NAME'] ?? '';
+  // ── Flutterwave (PUBLIC key only — secret key is in Supabase Edge Secrets) ──
+  // Store in Supabase Edge Function Secrets:
+  //   FLW_SECRET_KEY    = FLWSECK-1e193a825ce4a311347f3afa624c0e00-19db9dfc5c9vt-X
+  //   FLW_ENCRYPTION_KEY = 1e193a825ce4a906a6fcb5ca
+  static String get flutterwavePublicKey =>
+      dotenv.env['FLUTTERWAVE_PUBLIC_KEY'] ?? _missing('FLUTTERWAVE_PUBLIC_KEY');
 
-  static String get cloudinaryApiKey =>
-      dotenv.env['CLOUDINARY_API_KEY'] ?? '';
-
-  static String get cloudinaryApiSecret =>
-      dotenv.env['CLOUDINARY_API_SECRET'] ?? '';
-
-  static String get cloudinaryUploadPreset =>
-      dotenv.env['CLOUDINARY_UPLOAD_PRESET'] ?? 'ml_default';
-
-  // ── Paystack (PUBLIC key only — secret key is server-side) ──────────────────
-  static String get paystackPublicKey =>
-      dotenv.env['PAYSTACK_PUBLIC_KEY'] ?? _missing('PAYSTACK_PUBLIC_KEY');
-
-  // ⚠️  paystackSecretKey is intentionally REMOVED from the Flutter client.
-  //     All secret-key Paystack calls go through Supabase Edge Functions.
-  //     See: supabase/functions/paystack/index.ts
-
-  static String get paystackCallbackUrl =>
-      dotenv.env['PAYSTACK_CALLBACK_URL'] ??
+  static String get flutterwaveCallbackUrl =>
+      dotenv.env['FLUTTERWAVE_CALLBACK_URL'] ??
       'https://maximusrealestate.ng/payment/callback';
 
   // ── Admin ───────────────────────────────────────────────────────────────────
   static String get adminEmail =>
       dotenv.env['ADMIN_EMAIL'] ?? _missing('ADMIN_EMAIL');
 
-  // ── App Owner Contact (used in Paystack service) ────────────────────────────
-  // Store these in .env so they are never hardcoded in the binary.
+  // ── App Owner Contact (optional, used in service layer) ─────────────────────
   static String get appOwnerPhone =>
       dotenv.env['APP_OWNER_PHONE'] ?? '';
 
@@ -71,12 +54,13 @@ class AppConfig {
 
   /// Validate all required config keys are present at startup.
   static void validate() {
+    // Accessing each getter will throw _missing() if the key is absent.
     final _ = [
       supabaseUrl,
       supabaseAnonKey,
       geminiApiKey,
       googleWebClientId,
-      paystackPublicKey,
+      flutterwavePublicKey,
       adminEmail,
     ];
   }
